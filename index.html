@@ -788,8 +788,10 @@
             <div class="panel-block">
               <div class="section-title-row">
                 <h2>Orders</h2>
-                <p class="section-meta" id="orderMeta">0 orders</p>
+                <button class="secondary-button" id="syncOrdersButton" type="button">Sync Orders</button>
               </div>
+              <p class="section-meta" id="orderMeta">0 orders</p>
+              <p class="line-detail" id="syncMeta">Sign in to sync orders.</p>
               <div class="filter-row" id="orderFilters" aria-label="Order filters"></div>
               <div class="orders-scroll">
                 <div class="orders-list" id="ordersList"></div>
@@ -891,6 +893,8 @@
     const orderFilters = document.getElementById("orderFilters");
     const ordersList = document.getElementById("ordersList");
     const orderMeta = document.getElementById("orderMeta");
+    const syncMeta = document.getElementById("syncMeta");
+    const syncOrdersButton = document.getElementById("syncOrdersButton");
     const panelLabel = document.getElementById("panelLabel");
     const panelTitle = document.getElementById("panelTitle");
     const panelText = document.getElementById("panelText");
@@ -909,6 +913,7 @@
     let currentUser = null;
     let supabaseReady = false;
     let supabaseConfigured = false;
+    let syncStatus = "Sign in to sync orders.";
     let toastTimer = 0;
 
     function loadStoredJson(key, fallback) {
@@ -945,10 +950,12 @@
     async function loadOrdersFromServer() {
       if (!authSession || !currentUser) {
         supabaseReady = false;
+        setSyncStatus("Sign in to sync orders.");
         return;
       }
 
       try {
+        setSyncStatus("Loading orders from Supabase...");
         const response = await fetch("/api/orders", {
           headers: getAuthHeaders()
         });
@@ -956,6 +963,7 @@
 
         if (!response.ok || !data.supabaseConfigured) {
           supabaseReady = false;
+          setSyncStatus(data.message || "Supabase order sync is not ready.");
           return;
         }
 
@@ -963,20 +971,20 @@
         orders = mergeOrders(data.orders || [], orders);
         saveOrders();
 
-        orders.forEach((order) => {
-          syncOrder(order);
-        });
+        await syncAllOrders({ silent: true });
+        setSyncStatus(`Synced ${orders.length} order${orders.length === 1 ? "" : "s"} with Supabase.`);
       } catch (error) {
         supabaseReady = false;
+        setSyncStatus(error.message || "Order sync failed.");
       }
     }
 
-    function syncOrder(order) {
+    async function syncOrder(order) {
       if (!supabaseReady || !authSession || !currentUser || !order || !order.id) {
-        return;
+        return false;
       }
 
-      fetch("/api/orders", {
+      const response = await fetch("/api/orders", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -988,9 +996,59 @@
             userId: currentUser.id
           }
         })
-      }).catch(() => {
-        supabaseReady = false;
       });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        supabaseReady = false;
+        throw new Error(data.message || "Could not sync order to Supabase.");
+      }
+
+      return true;
+    }
+
+    async function syncAllOrders(options = {}) {
+      if (!authSession || !currentUser) {
+        setSyncStatus("Sign in to sync orders.");
+        return;
+      }
+
+      try {
+        if (!options.silent) {
+          setSyncStatus("Syncing orders...");
+        }
+
+        supabaseReady = true;
+
+        for (const order of orders) {
+          await syncOrder(order);
+        }
+
+        if (!options.silent) {
+          await loadOrdersFromServer();
+          showToast("Orders synced.", "success");
+        }
+      } catch (error) {
+        setSyncStatus(error.message || "Order sync failed.");
+        if (!options.silent) {
+          showToast(error.message || "Order sync failed.", "error");
+        }
+      }
+    }
+
+    function setSyncStatus(message) {
+      syncStatus = message;
+      if (syncMeta) {
+        syncMeta.textContent = syncStatus;
+      }
+      if (syncOrdersButton) {
+        syncOrdersButton.disabled = !currentUser || !supabaseConfigured;
+      }
+      if (gatewayStatus && currentUser) {
+        const paymentStatus = razorpayKeyId ? "Razorpay ready" : "Add Razorpay keys";
+        gatewayStatus.textContent = `${paymentStatus} | ${message}`;
+      }
     }
 
     function getAuthHeaders() {
@@ -1231,7 +1289,9 @@
     function addOrder(order) {
       orders = [order, ...orders].slice(0, 50);
       saveOrders();
-      syncOrder(order);
+      syncOrder(order).catch((error) => {
+        setSyncStatus(error.message || "Order sync failed.");
+      });
       renderOrders();
       return order;
     }
@@ -1243,7 +1303,9 @@
         : order
       );
       saveOrders();
-      syncOrder(updatedOrder);
+      syncOrder(updatedOrder).catch((error) => {
+        setSyncStatus(error.message || "Order sync failed.");
+      });
       renderOrders();
     }
 
@@ -1629,6 +1691,8 @@
         : orders.filter((order) => order.status === orderFilter);
 
       orderMeta.textContent = `${orders.length} order${orders.length === 1 ? "" : "s"}`;
+      syncMeta.textContent = syncStatus;
+      syncOrdersButton.disabled = !currentUser || !supabaseConfigured;
       renderOrderFilters();
 
       if (filteredOrders.length === 0) {
@@ -1687,6 +1751,7 @@
 
     clearCartButton.addEventListener("click", clearCart);
     checkoutCartButton.addEventListener("click", checkoutCart);
+    syncOrdersButton.addEventListener("click", () => syncAllOrders());
     authForm.addEventListener("submit", signIn);
     signUpButton.addEventListener("click", signUp);
     signOutButton.addEventListener("click", signOut);
