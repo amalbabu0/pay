@@ -18,6 +18,38 @@ function verifySignature(orderId, paymentId, signature, keySecret) {
   );
 }
 
+function resolveItems(body) {
+  if (Array.isArray(body.items) && body.items.length > 0) {
+    return body.items
+      .map((item) => {
+        const product = getProduct(item.productId);
+        const quantity = Number(item.quantity);
+
+        if (!product || !Number.isInteger(quantity) || quantity < 1) {
+          return null;
+        }
+
+        return {
+          productId: product.id,
+          name: product.name,
+          quantity,
+          pricePaise: product.pricePaise
+        };
+      })
+      .filter(Boolean);
+  }
+
+  const product = getProduct(body.productId);
+  return product
+    ? [{
+        productId: product.id,
+        name: product.name,
+        quantity: 1,
+        pricePaise: product.pricePaise
+      }]
+    : [];
+}
+
 module.exports = async function handler(request, response) {
   try {
     if (request.method !== "POST") {
@@ -48,13 +80,14 @@ module.exports = async function handler(request, response) {
       return;
     }
 
-    const product = getProduct(body.productId);
+    const items = resolveItems(body);
+    const amount = items.reduce((total, item) => total + item.pricePaise * item.quantity, 0);
 
     sendJson(response, 200, {
       status: "placed",
       orderNumber: `ORD-${Date.now().toString().slice(-8)}`,
-      productId: product ? product.id : null,
-      productName: product ? product.name : "Selected product",
+      items,
+      amount,
       paymentId
     });
   } catch (error) {

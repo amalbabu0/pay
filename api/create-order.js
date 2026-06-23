@@ -17,16 +17,50 @@ function createReceipt(productId) {
   return `rcpt_${safeId}_${Date.now()}`.slice(0, 40);
 }
 
-function resolveOrderRequest(body) {
-  const product = body.productId ? getProduct(body.productId) : null;
+function resolveLineItems(body) {
+  if (Array.isArray(body.items) && body.items.length > 0) {
+    return body.items.map((item) => {
+      const product = getProduct(item.productId);
+      const quantity = Number(item.quantity);
 
+      if (!product) {
+        const error = new Error("Invalid product selected.");
+        error.statusCode = 400;
+        throw error;
+      }
+
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+        const error = new Error("Quantity must be between 1 and 99.");
+        error.statusCode = 400;
+        throw error;
+      }
+
+      return {
+        product,
+        quantity,
+        amount: product.pricePaise * quantity
+      };
+    });
+  }
+
+  const product = body.productId ? getProduct(body.productId) : null;
   if (body.productId && !product) {
     const error = new Error("Invalid product selected.");
     error.statusCode = 400;
     throw error;
   }
 
-  const amount = product ? product.pricePaise : parseAmount(body.amount);
+  return product
+    ? [{ product, quantity: 1, amount: product.pricePaise }]
+    : [];
+}
+
+function resolveOrderRequest(body) {
+  const items = resolveLineItems(body);
+  const amount = items.length > 0
+    ? items.reduce((total, item) => total + item.amount, 0)
+    : parseAmount(body.amount);
+
   if (amount < MIN_AMOUNT_PAISE) {
     const error = new Error("Amount must be at least 100 paise.");
     error.statusCode = 400;
@@ -40,10 +74,10 @@ function resolveOrderRequest(body) {
     throw error;
   }
 
-  const receipt = String(body.receipt || createReceipt(product && product.id)).slice(0, 40);
+  const receipt = String(body.receipt || createReceipt(items[0] && items[0].product.id)).slice(0, 40);
 
   return {
-    product,
+    items,
     amount,
     currency,
     receipt
@@ -66,10 +100,10 @@ module.exports = async function handler(request, response) {
         amount: orderRequest.amount,
         currency: orderRequest.currency,
         receipt: orderRequest.receipt,
-        notes: orderRequest.product
+        notes: orderRequest.items.length > 0
           ? {
-              product_id: orderRequest.product.id,
-              product_name: orderRequest.product.name
+              item_count: String(orderRequest.items.reduce((total, item) => total + item.quantity, 0)),
+              product_ids: orderRequest.items.map((item) => item.product.id).join(",").slice(0, 256)
             }
           : {}
       });
@@ -77,7 +111,13 @@ module.exports = async function handler(request, response) {
       sendJson(response, 200, {
         order_id: order.id,
         amount: order.amount,
-        currency: order.currency
+        currency: order.currency,
+        items: orderRequest.items.map((item) => ({
+          productId: item.product.id,
+          name: item.product.name,
+          quantity: item.quantity,
+          pricePaise: item.product.pricePaise
+        }))
       });
     } catch (error) {
       throw toRazorpayError(error);

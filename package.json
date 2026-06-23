@@ -1,9 +1,5 @@
 {
-  "scripts": {
-    "start": "node server.js"
-  },
   "dependencies": {
-    "dotenv": "^17.4.2",
     "razorpay": "^2.9.6"
   }
 }
