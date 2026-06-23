@@ -8,6 +8,22 @@ function getBearerToken(request) {
   return match ? match[1] : "";
 }
 
+function getUserIdFromToken(accessToken) {
+  const payload = accessToken.split(".")[1];
+  if (!payload) {
+    return "";
+  }
+
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = Buffer.from(normalized, "base64").toString("utf8");
+    const claims = JSON.parse(decoded);
+    return String(claims.sub || "");
+  } catch (error) {
+    return "";
+  }
+}
+
 module.exports = async function handler(request, response) {
   try {
     if (!isSupabaseConfigured()) {
@@ -20,9 +36,9 @@ module.exports = async function handler(request, response) {
     }
 
     const accessToken = getBearerToken(request);
-    const userId = String(request.headers["x-user-id"] || "");
+    const userId = getUserIdFromToken(accessToken);
 
-    if (!accessToken) {
+    if (!accessToken || !userId) {
       sendJson(response, 401, {
         supabaseConfigured: true,
         orders: [],

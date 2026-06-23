@@ -991,10 +991,7 @@
           ...getAuthHeaders()
         },
         body: JSON.stringify({
-          order: {
-            ...order,
-            userId: currentUser.id
-          }
+          order
         })
       });
 
@@ -1054,8 +1051,7 @@
     function getAuthHeaders() {
       return authSession && currentUser
         ? {
-            Authorization: `Bearer ${authSession.access_token}`,
-            "X-User-Id": currentUser.id
+            Authorization: `Bearer ${authSession.access_token}`
           }
         : {};
     }
@@ -1273,7 +1269,6 @@
 
       return {
         id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        userId: currentUser ? currentUser.id : "",
         orderNumber: "",
         gatewayOrderId: "",
         paymentId: "",
