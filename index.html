@@ -118,6 +118,42 @@
       font-weight: 800;
     }
 
+    .app-shell[hidden],
+    .login-page[hidden] {
+      display: none;
+    }
+
+    .login-page {
+      display: grid;
+      min-height: 100vh;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .login-card {
+      width: min(440px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: var(--shadow);
+    }
+
+    .login-card .panel-block {
+      padding: 24px;
+    }
+
+    .login-title {
+      margin: 0;
+      font-size: clamp(2rem, 6vw, 3rem);
+      line-height: 1.04;
+    }
+
+    .login-copy {
+      margin: 12px 0 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
     main {
       width: min(1240px, calc(100% - 36px));
       margin: 0 auto;
@@ -392,7 +428,6 @@
     }
 
     .cart-panel,
-    .auth-panel,
     .orders-panel {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -404,8 +439,8 @@
       padding: 18px;
     }
 
-    .cart-list,
     .auth-form,
+    .cart-list,
     .orders-list {
       display: grid;
       gap: 12px;
@@ -667,101 +702,104 @@
   </style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand" aria-label="SwiftCart">
-      <span class="brand-mark">S</span>
-      <span>SwiftCart</span>
-    </div>
-    <div class="top-actions">
-      <div class="auth-chip" id="authChip">Guest</div>
-      <div class="cart-chip" id="cartChip">Cart 0</div>
-      <div class="gateway-status" id="gatewayStatus">Checking Razorpay</div>
-    </div>
-  </header>
-
-  <main>
-    <section class="store-head" aria-label="Store checkout">
-      <div class="headline">
-        <p class="eyebrow">Cart checkout</p>
-        <h1>Shop, pay, and track every order.</h1>
-        <p class="subhead">Add products to the cart, complete payment with Razorpay, and see successful, failed, and cancelled orders in one place.</p>
+  <section class="login-page" id="loginPage">
+    <div class="login-card">
+      <div class="panel-block">
+        <div class="brand" aria-label="SwiftCart">
+          <span class="brand-mark">S</span>
+          <span>SwiftCart</span>
+        </div>
+        <p class="eyebrow" style="margin-top: 24px;">Customer login</p>
+        <h1 class="login-title">Sign in to your store.</h1>
+        <p class="login-copy">Access your home page, cart, checkout, and order history with a Supabase session.</p>
+        <form class="auth-form" id="authForm" style="margin-top: 20px;">
+          <input id="authEmail" type="email" autocomplete="email" placeholder="Email" required>
+          <input id="authPassword" type="password" autocomplete="current-password" placeholder="Password" required minlength="6">
+          <div class="cart-actions">
+            <button class="primary-button" id="signInButton" type="submit">Sign In</button>
+            <button class="secondary-button" id="signUpButton" type="button">Create Account</button>
+          </div>
+        </form>
       </div>
+    </div>
+  </section>
 
-      <aside class="order-panel" aria-live="polite" aria-label="Order status">
+  <div class="app-shell" id="appShell" hidden>
+    <header class="topbar">
+      <div class="brand" aria-label="SwiftCart">
+        <span class="brand-mark">S</span>
+        <span>SwiftCart</span>
+      </div>
+      <div class="top-actions">
+        <div class="auth-chip" id="authChip">Guest</div>
+        <div class="cart-chip" id="cartChip">Cart 0</div>
+        <div class="gateway-status" id="gatewayStatus">Checking Razorpay</div>
+        <button class="secondary-button" id="signOutButton" type="button">Sign Out</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="store-head" aria-label="Store checkout">
+        <div class="headline">
+          <p class="eyebrow">Customer home</p>
+          <h1>Shop, pay, and track every order.</h1>
+          <p class="subhead">Add products to the cart, complete payment with Razorpay, and see successful, failed, and cancelled orders in one place.</p>
+        </div>
+
+        <aside class="order-panel" aria-live="polite" aria-label="Order status">
+          <div>
+            <p class="panel-label" id="panelLabel">Order status</p>
+            <h2 class="panel-title" id="panelTitle">Ready for checkout</h2>
+            <p class="panel-text" id="panelText">Your cart and order history are ready.</p>
+          </div>
+          <p class="payment-id" id="paymentId"></p>
+        </aside>
+      </section>
+
+      <section class="workspace-grid" aria-label="Store workspace">
         <div>
-          <p class="panel-label" id="panelLabel">Order status</p>
-          <h2 class="panel-title" id="panelTitle">Ready for checkout</h2>
-          <p class="panel-text" id="panelText">Your cart and order history are ready.</p>
+          <div class="section-title-row">
+            <h2>Products</h2>
+            <p class="section-meta" id="productMeta">4 items</p>
+          </div>
+          <section class="products-grid" id="productsGrid" aria-label="Products"></section>
         </div>
-        <p class="payment-id" id="paymentId"></p>
-      </aside>
-    </section>
 
-    <section class="workspace-grid" aria-label="Store workspace">
-      <div>
-        <div class="section-title-row">
-          <h2>Products</h2>
-          <p class="section-meta" id="productMeta">4 items</p>
-        </div>
-        <section class="products-grid" id="productsGrid" aria-label="Products"></section>
-      </div>
-
-      <aside class="side-stack" aria-label="Cart and orders">
-        <section class="auth-panel" aria-label="Login">
-          <div class="panel-block">
-            <div class="section-title-row">
-              <h2>Login</h2>
-              <p class="section-meta" id="authMeta">Guest</p>
-            </div>
-            <form class="auth-form" id="authForm">
-              <input id="authEmail" type="email" autocomplete="email" placeholder="Email" required>
-              <input id="authPassword" type="password" autocomplete="current-password" placeholder="Password" required minlength="6">
-              <div class="cart-actions">
-                <button class="primary-button" id="signInButton" type="submit">Sign In</button>
-                <button class="secondary-button" id="signUpButton" type="button">Create Account</button>
+        <aside class="side-stack" aria-label="Cart and orders">
+          <section class="cart-panel" aria-label="Cart">
+            <div class="panel-block">
+              <div class="section-title-row">
+                <h2>Cart</h2>
+                <p class="section-meta" id="cartMeta">0 items</p>
               </div>
-            </form>
-            <div class="auth-form" id="accountPanel" hidden>
-              <p class="line-name" id="accountEmail"></p>
-              <p class="line-detail">Orders sync with Supabase.</p>
-              <button class="secondary-button" id="signOutButton" type="button">Sign Out</button>
+              <div class="cart-list" id="cartList"></div>
+              <div class="cart-total">
+                <span>Total</span>
+                <span id="cartTotal">Rs. 0</span>
+              </div>
+              <div class="cart-actions">
+                <button class="secondary-button" id="clearCartButton" type="button">Clear</button>
+                <button class="primary-button" id="checkoutCartButton" type="button">Checkout Cart</button>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="cart-panel" aria-label="Cart">
-          <div class="panel-block">
-            <div class="section-title-row">
-              <h2>Cart</h2>
-              <p class="section-meta" id="cartMeta">0 items</p>
+          <section class="orders-panel" aria-label="Orders">
+            <div class="panel-block">
+              <div class="section-title-row">
+                <h2>Orders</h2>
+                <p class="section-meta" id="orderMeta">0 orders</p>
+              </div>
+              <div class="filter-row" id="orderFilters" aria-label="Order filters"></div>
+              <div class="orders-scroll">
+                <div class="orders-list" id="ordersList"></div>
+              </div>
             </div>
-            <div class="cart-list" id="cartList"></div>
-            <div class="cart-total">
-              <span>Total</span>
-              <span id="cartTotal">Rs. 0</span>
-            </div>
-            <div class="cart-actions">
-              <button class="secondary-button" id="clearCartButton" type="button">Clear</button>
-              <button class="primary-button" id="checkoutCartButton" type="button">Checkout Cart</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="orders-panel" aria-label="Orders">
-          <div class="panel-block">
-            <div class="section-title-row">
-              <h2>Orders</h2>
-              <p class="section-meta" id="orderMeta">0 orders</p>
-            </div>
-            <div class="filter-row" id="orderFilters" aria-label="Order filters"></div>
-            <div class="orders-scroll">
-              <div class="orders-list" id="ordersList"></div>
-            </div>
-          </div>
-        </section>
-      </aside>
-    </section>
-  </main>
+          </section>
+        </aside>
+      </section>
+    </main>
+  </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -833,17 +871,16 @@
       maximumFractionDigits: 0
     });
 
+    const loginPage = document.getElementById("loginPage");
+    const appShell = document.getElementById("appShell");
     const productsGrid = document.getElementById("productsGrid");
     const productMeta = document.getElementById("productMeta");
     const gatewayStatus = document.getElementById("gatewayStatus");
     const authChip = document.getElementById("authChip");
-    const authMeta = document.getElementById("authMeta");
     const authForm = document.getElementById("authForm");
     const authEmail = document.getElementById("authEmail");
     const authPassword = document.getElementById("authPassword");
     const signUpButton = document.getElementById("signUpButton");
-    const accountPanel = document.getElementById("accountPanel");
-    const accountEmail = document.getElementById("accountEmail");
     const signOutButton = document.getElementById("signOutButton");
     const cartChip = document.getElementById("cartChip");
     const cartList = document.getElementById("cartList");
@@ -1063,15 +1100,9 @@
 
     function renderAuth() {
       const signedIn = Boolean(currentUser);
-      authChip.textContent = signedIn ? "Signed in" : "Guest";
-      authMeta.textContent = signedIn ? "Signed in" : "Guest";
-      authForm.hidden = signedIn;
-      accountPanel.hidden = !signedIn;
-      accountEmail.textContent = signedIn ? currentUser.email : "";
-
-      if (!supabaseConfigured) {
-        authMeta.textContent = "Local only";
-      }
+      loginPage.hidden = signedIn;
+      appShell.hidden = !signedIn;
+      authChip.textContent = signedIn ? currentUser.email : "Guest";
 
       const paymentStatus = razorpayKeyId ? "Razorpay ready" : "Add Razorpay keys";
       const orderStatus = signedIn
@@ -1306,6 +1337,12 @@
     }
 
     async function checkoutItems(rawItems, options) {
+      if (!currentUser) {
+        showToast("Sign in to checkout.", "error");
+        renderAuth();
+        return;
+      }
+
       if (activeOrderId) {
         showToast("Finish the current checkout first.", "error");
         return;
