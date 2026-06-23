@@ -90,7 +90,8 @@
     }
 
     .gateway-status,
-    .cart-chip {
+    .cart-chip,
+    .auth-chip {
       display: inline-flex;
       min-height: 38px;
       align-items: center;
@@ -109,6 +110,11 @@
 
     .cart-chip {
       color: var(--ink);
+      font-weight: 800;
+    }
+
+    .auth-chip {
+      color: var(--teal);
       font-weight: 800;
     }
 
@@ -386,6 +392,7 @@
     }
 
     .cart-panel,
+    .auth-panel,
     .orders-panel {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -398,9 +405,25 @@
     }
 
     .cart-list,
+    .auth-form,
     .orders-list {
       display: grid;
       gap: 12px;
+    }
+
+    .auth-form input {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 12px;
+      color: var(--ink);
+      background: #ffffff;
+    }
+
+    .auth-form input:focus {
+      border-color: rgba(8, 127, 115, 0.65);
+      outline: 3px solid rgba(8, 127, 115, 0.12);
     }
 
     .cart-line {
@@ -619,7 +642,8 @@
       }
 
       .gateway-status,
-      .cart-chip {
+      .cart-chip,
+      .auth-chip {
         max-width: 100%;
         white-space: normal;
       }
@@ -649,6 +673,7 @@
       <span>SwiftCart</span>
     </div>
     <div class="top-actions">
+      <div class="auth-chip" id="authChip">Guest</div>
       <div class="cart-chip" id="cartChip">Cart 0</div>
       <div class="gateway-status" id="gatewayStatus">Checking Razorpay</div>
     </div>
@@ -682,6 +707,28 @@
       </div>
 
       <aside class="side-stack" aria-label="Cart and orders">
+        <section class="auth-panel" aria-label="Login">
+          <div class="panel-block">
+            <div class="section-title-row">
+              <h2>Login</h2>
+              <p class="section-meta" id="authMeta">Guest</p>
+            </div>
+            <form class="auth-form" id="authForm">
+              <input id="authEmail" type="email" autocomplete="email" placeholder="Email" required>
+              <input id="authPassword" type="password" autocomplete="current-password" placeholder="Password" required minlength="6">
+              <div class="cart-actions">
+                <button class="primary-button" id="signInButton" type="submit">Sign In</button>
+                <button class="secondary-button" id="signUpButton" type="button">Create Account</button>
+              </div>
+            </form>
+            <div class="auth-form" id="accountPanel" hidden>
+              <p class="line-name" id="accountEmail"></p>
+              <p class="line-detail">Orders sync with Supabase.</p>
+              <button class="secondary-button" id="signOutButton" type="button">Sign Out</button>
+            </div>
+          </div>
+        </section>
+
         <section class="cart-panel" aria-label="Cart">
           <div class="panel-block">
             <div class="section-title-row">
@@ -719,6 +766,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     const fallbackProducts = [
       {
@@ -788,6 +836,15 @@
     const productsGrid = document.getElementById("productsGrid");
     const productMeta = document.getElementById("productMeta");
     const gatewayStatus = document.getElementById("gatewayStatus");
+    const authChip = document.getElementById("authChip");
+    const authMeta = document.getElementById("authMeta");
+    const authForm = document.getElementById("authForm");
+    const authEmail = document.getElementById("authEmail");
+    const authPassword = document.getElementById("authPassword");
+    const signUpButton = document.getElementById("signUpButton");
+    const accountPanel = document.getElementById("accountPanel");
+    const accountEmail = document.getElementById("accountEmail");
+    const signOutButton = document.getElementById("signOutButton");
     const cartChip = document.getElementById("cartChip");
     const cartList = document.getElementById("cartList");
     const cartMeta = document.getElementById("cartMeta");
@@ -810,7 +867,11 @@
     let activeOrderId = "";
     let razorpayKeyId = "";
     let checkoutCurrency = "INR";
+    let supabaseClient = null;
+    let authSession = null;
+    let currentUser = null;
     let supabaseReady = false;
+    let supabaseConfigured = false;
     let toastTimer = 0;
 
     function loadStoredJson(key, fallback) {
@@ -845,8 +906,15 @@
     }
 
     async function loadOrdersFromServer() {
+      if (!authSession || !currentUser) {
+        supabaseReady = false;
+        return;
+      }
+
       try {
-        const response = await fetch("/api/orders");
+        const response = await fetch("/api/orders", {
+          headers: getAuthHeaders()
+        });
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok || !data.supabaseConfigured) {
@@ -867,17 +935,34 @@
     }
 
     function syncOrder(order) {
-      if (!supabaseReady || !order || !order.id) {
+      if (!supabaseReady || !authSession || !currentUser || !order || !order.id) {
         return;
       }
 
       fetch("/api/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order })
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({
+          order: {
+            ...order,
+            userId: currentUser.id
+          }
+        })
       }).catch(() => {
         supabaseReady = false;
       });
+    }
+
+    function getAuthHeaders() {
+      return authSession && currentUser
+        ? {
+            Authorization: `Bearer ${authSession.access_token}`,
+            "X-User-Id": currentUser.id
+          }
+        : {};
     }
 
     function formatPrice(pricePaise) {
@@ -940,6 +1025,115 @@
       }, 5200);
     }
 
+    async function setupSupabaseAuth(config) {
+      if (!config.supabaseConfigured || !config.supabaseUrl || !config.supabaseAnonKey || !window.supabase) {
+        supabaseConfigured = false;
+        renderAuth();
+        return;
+      }
+
+      supabaseConfigured = true;
+
+      if (!supabaseClient) {
+        supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+
+        supabaseClient.auth.onAuthStateChange(async (event, session) => {
+          authSession = session;
+          currentUser = session ? session.user : null;
+          supabaseReady = Boolean(currentUser);
+          renderAuth();
+
+          if (currentUser) {
+            await loadOrdersFromServer();
+            renderOrders();
+          } else {
+            orders = loadStoredJson(STORAGE_KEYS.orders, []);
+            supabaseReady = false;
+            renderOrders();
+          }
+        });
+      }
+
+      const { data } = await supabaseClient.auth.getSession();
+      authSession = data.session;
+      currentUser = data.session ? data.session.user : null;
+      supabaseReady = Boolean(currentUser);
+      renderAuth();
+    }
+
+    function renderAuth() {
+      const signedIn = Boolean(currentUser);
+      authChip.textContent = signedIn ? "Signed in" : "Guest";
+      authMeta.textContent = signedIn ? "Signed in" : "Guest";
+      authForm.hidden = signedIn;
+      accountPanel.hidden = !signedIn;
+      accountEmail.textContent = signedIn ? currentUser.email : "";
+
+      if (!supabaseConfigured) {
+        authMeta.textContent = "Local only";
+      }
+
+      const paymentStatus = razorpayKeyId ? "Razorpay ready" : "Add Razorpay keys";
+      const orderStatus = signedIn
+        ? "Orders syncing"
+        : supabaseConfigured ? "Login to sync" : "Local orders";
+      gatewayStatus.textContent = `${paymentStatus} | ${orderStatus}`;
+    }
+
+    async function signIn(event) {
+      event.preventDefault();
+
+      if (!supabaseClient) {
+        showToast("Supabase login is not configured.", "error");
+        return;
+      }
+
+      const email = authEmail.value.trim();
+      const password = authPassword.value;
+
+      const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) {
+        showToast(error.message, "error");
+        return;
+      }
+
+      authPassword.value = "";
+      showToast("Signed in.", "success");
+    }
+
+    async function signUp() {
+      if (!supabaseClient) {
+        showToast("Supabase login is not configured.", "error");
+        return;
+      }
+
+      const email = authEmail.value.trim();
+      const password = authPassword.value;
+
+      if (!email || password.length < 6) {
+        showToast("Enter an email and a 6 character password.", "error");
+        return;
+      }
+
+      const { error } = await supabaseClient.auth.signUp({ email, password });
+      if (error) {
+        showToast(error.message, "error");
+        return;
+      }
+
+      authPassword.value = "";
+      showToast("Account created. Check email confirmation if required.", "success");
+    }
+
+    async function signOut() {
+      if (!supabaseClient) {
+        return;
+      }
+
+      await supabaseClient.auth.signOut();
+      showToast("Signed out.", "success");
+    }
+
     function setActiveOrder(orderId) {
       activeOrderId = orderId;
       renderProducts();
@@ -990,6 +1184,7 @@
 
       return {
         id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        userId: currentUser ? currentUser.id : "",
         orderNumber: "",
         gatewayOrderId: "",
         paymentId: "",
@@ -1045,10 +1240,12 @@
     function applyConfig(config) {
       razorpayKeyId = config.keyId || "";
       checkoutCurrency = config.currency || "INR";
-      supabaseReady = Boolean(config.supabaseConfigured);
+      supabaseConfigured = Boolean(config.supabaseConfigured);
 
       const paymentStatus = config.keyConfigured ? "Razorpay ready" : "Add Razorpay keys";
-      const orderStatus = supabaseReady ? "Supabase ready" : "Local orders";
+      const orderStatus = supabaseReady
+        ? "Orders syncing"
+        : supabaseConfigured ? "Login to sync" : "Local orders";
       gatewayStatus.textContent = `${paymentStatus} | ${orderStatus}`;
     }
 
@@ -1266,8 +1463,10 @@
         if (configResponse.ok) {
           const config = await configResponse.json();
           applyConfig(config);
+          await setupSupabaseAuth(config);
         } else {
           gatewayStatus.textContent = "Server not ready";
+          renderAuth();
         }
 
         if (productsResponse.ok) {
@@ -1276,6 +1475,7 @@
         }
       } catch (error) {
         gatewayStatus.textContent = location.protocol === "file:" ? "Run node server.js" : "Server not reachable";
+        renderAuth();
       }
 
       cart = cart.filter((item) => getProduct(item.productId));
@@ -1450,8 +1650,12 @@
 
     clearCartButton.addEventListener("click", clearCart);
     checkoutCartButton.addEventListener("click", checkoutCart);
+    authForm.addEventListener("submit", signIn);
+    signUpButton.addEventListener("click", signUp);
+    signOutButton.addEventListener("click", signOut);
 
     renderAll();
+    renderAuth();
     loadStoreState();
   </script>
 </body>

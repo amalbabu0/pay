@@ -1,6 +1,6 @@
 const { CURRENCY, areKeysConfigured, getKeyId } = require("../lib/razorpay-config");
 const { handleError, methodNotAllowed, sendJson } = require("../lib/api-utils");
-const { isSupabaseConfigured } = require("../lib/supabase-config");
+const { getSupabaseAnonKey, getSupabaseUrl, isSupabaseConfigured } = require("../lib/supabase-config");
 
 module.exports = async function handler(request, response) {
   try {
@@ -13,7 +13,9 @@ module.exports = async function handler(request, response) {
       keyConfigured: areKeysConfigured(),
       keyId: getKeyId(),
       currency: CURRENCY,
-      supabaseConfigured: isSupabaseConfigured()
+      supabaseConfigured: isSupabaseConfigured(),
+      supabaseUrl: getSupabaseUrl(),
+      supabaseAnonKey: getSupabaseAnonKey()
     });
   } catch (error) {
     handleError(response, error);
