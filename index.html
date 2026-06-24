@@ -512,6 +512,41 @@
       font-weight: 850;
     }
 
+    .cart-contact {
+      margin-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .contact-label {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .contact-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font: inherit;
+      color: var(--ink);
+      background: #fff;
+      box-sizing: border-box;
+    }
+
+    .contact-input:focus {
+      outline: none;
+      border-color: var(--ink);
+    }
+
+    .contact-hint {
+      margin: 0;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
     .cart-actions {
       margin-top: 14px;
     }
@@ -777,6 +812,18 @@
                 <span>Total</span>
                 <span id="cartTotal">Rs. 0</span>
               </div>
+              <div class="cart-contact">
+                <label class="contact-label" for="contactPhone">Phone number</label>
+                <input
+                  class="contact-input"
+                  id="contactPhone"
+                  type="tel"
+                  inputmode="tel"
+                  autocomplete="tel"
+                  placeholder="+919876543210"
+                />
+                <p class="contact-hint">Used to prefill Razorpay Checkout. Format: +(country code)(number).</p>
+              </div>
               <div class="cart-actions">
                 <button class="secondary-button" id="clearCartButton" type="button">Clear</button>
                 <button class="primary-button" id="checkoutCartButton" type="button">Checkout Cart</button>
@@ -890,6 +937,7 @@
     const cartTotal = document.getElementById("cartTotal");
     const clearCartButton = document.getElementById("clearCartButton");
     const checkoutCartButton = document.getElementById("checkoutCartButton");
+    const contactPhone = document.getElementById("contactPhone");
     const orderFilters = document.getElementById("orderFilters");
     const ordersList = document.getElementById("ordersList");
     const orderMeta = document.getElementById("orderMeta");
@@ -1415,6 +1463,17 @@
         return;
       }
 
+      const customerPhone = contactPhone ? contactPhone.value.trim() : "";
+      if (!/^\+\d{10,15}$/.test(customerPhone)) {
+        showToast("Enter a valid phone number, e.g. +919876543210.", "error");
+        if (contactPhone) {
+          contactPhone.focus();
+        }
+        return;
+      }
+
+      const customerEmail = currentUser && currentUser.email ? currentUser.email : "";
+
       const orderRecord = addOrder(createOrderRecord(items, "pending", "Creating Razorpay order."));
       setActiveOrder(orderRecord.id);
       setPanel("Creating order", "Cart checkout", "Preparing a secure Razorpay order.");
@@ -1445,9 +1504,8 @@
           order_id: order.order_id,
           method: "upi",
           prefill: {
-            name: "Test Customer",
-            email: "test.customer@example.com",
-            contact: "+919999999999"
+            email: customerEmail,
+            contact: customerPhone
           },
           notes: {
             item_count: String(getItemsCount(detailedItems)),
