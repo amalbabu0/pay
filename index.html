@@ -282,8 +282,7 @@
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: var(--surface);
-      box-shadow: 0 12px 30px rgba(24, 33, 47, 0.08);
+      background: #fbfcfe;
     }
 
     .product-card img {
@@ -427,6 +426,7 @@
       gap: 18px;
     }
 
+    .products-panel,
     .cart-panel,
     .orders-panel {
       border: 1px solid var(--line);
@@ -622,6 +622,11 @@
       background: var(--gray-soft);
     }
 
+    .status-refunded {
+      color: #5b3fa3;
+      background: var(--gray-soft);
+    }
+
     .order-items {
       margin: 10px 0 0;
       padding: 0;
@@ -632,7 +637,19 @@
     }
 
     .order-actions {
+      flex-wrap: wrap;
       margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .order-actions .primary-button,
+    .order-actions .secondary-button,
+    .order-actions .danger-button {
+      flex: 1 1 130px;
+      min-height: 38px;
+      padding: 0 12px;
+      font-size: 0.9rem;
     }
 
     .toast {
@@ -792,13 +809,15 @@
       </section>
 
       <section class="workspace-grid" aria-label="Store workspace">
-        <div>
-          <div class="section-title-row">
-            <h2>Products</h2>
-            <p class="section-meta" id="productMeta">4 items</p>
+        <section class="products-panel" aria-label="Products">
+          <div class="panel-block">
+            <div class="section-title-row">
+              <h2>Products</h2>
+              <p class="section-meta" id="productMeta">4 items</p>
+            </div>
+            <div class="products-grid" id="productsGrid"></div>
           </div>
-          <section class="products-grid" id="productsGrid" aria-label="Products"></section>
-        </div>
+        </section>
 
         <aside class="side-stack" aria-label="Cart and orders">
           <section class="cart-panel" aria-label="Cart">
@@ -903,7 +922,8 @@
       pending: "Pending",
       success: "Successful",
       failed: "Failed",
-      cancelled: "Cancelled"
+      cancelled: "Cancelled",
+      refunded: "Refunded"
     };
 
     const filterLabels = {
@@ -911,7 +931,8 @@
       pending: "Pending",
       success: "Successful",
       failed: "Failed",
-      cancelled: "Cancelled"
+      cancelled: "Cancelled",
+      refunded: "Refunded"
     };
 
     const currencyFormatter = new Intl.NumberFormat("en-IN", {
@@ -1274,6 +1295,15 @@
       renderOrders();
     }
 
+    function addToCartSilently(productId, quantity = 1) {
+      const existing = cart.find((item) => item.productId === productId);
+      if (existing) {
+        existing.quantity = Math.min(existing.quantity + quantity, 99);
+      } else {
+        cart.push({ productId, quantity });
+      }
+    }
+
     function addToCart(productId, quantity = 1) {
       const product = getProduct(productId);
       if (!product) {
@@ -1281,13 +1311,7 @@
         return;
       }
 
-      const existing = cart.find((item) => item.productId === productId);
-      if (existing) {
-        existing.quantity = Math.min(existing.quantity + quantity, 99);
-      } else {
-        cart.push({ productId, quantity });
-      }
-
+      addToCartSilently(productId, quantity);
       saveCart();
       renderCart();
       renderProducts();
@@ -1372,6 +1396,126 @@
       setPanel("Order cancelled", "Payment not completed", "The order has been cancelled.");
       showToast("Order cancelled.", "error");
     }
+
+    async function returnOrder(orderId) {
+      const order = getOrder(orderId);
+      if (!order || order.status !== "success") {
+        return;
+      }
+
+      if (!order.paymentId) {
+        showToast("No payment ID found to refund.", "error");
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `Return this order and refund ${formatPrice(order.amountPaise || 0)}?`
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      setPanel("Processing return", "Refunding payment", "Requesting a refund from Razorpay.");
+      showToast("Processing refund...", "success");
+
+      try {
+        const result = await requestJson("/api/refund", {
+          payment_id: order.paymentId,
+          amount: order.amountPaise
+        });
+
+        updateOrder(orderId, {
+          status: "refunded",
+          message: `Order returned. Refund ${result.refundId} (${result.refundStatus}).`
+        });
+
+        setPanel(
+          "Order returned",
+          "Refund initiated",
+          `Refund ${result.refundId} is ${result.refundStatus}.`,
+          `Payment ID: ${order.paymentId}`
+        );
+        showToast("Refund initiated successfully.", "success");
+      } catch (error) {
+        setPanel("Refund failed", "Could not refund", error.message);
+        showToast(error.message || "Refund failed.", "error");
+      }
+    }
+
+    function buyAgain(orderId) {
+      const order = getOrder(orderId);
+      if (!order || !Array.isArray(order.items) || order.items.length === 0) {
+        showToast("No items to reorder.", "error");
+        return;
+      }
+
+      let added = 0;
+      order.items.forEach((item) => {
+        if (getProduct(item.productId)) {
+          addToCartSilently(item.productId, item.quantity || 1);
+          added += 1;
+        }
+      });
+
+      if (added === 0) {
+        showToast("These items are no longer available.", "error");
+        return;
+      }
+
+      saveCart();
+      renderCart();
+      renderProducts();
+      showToast("Items added to cart.", "success");
+    }
+
+    function retryPayment(orderId) {
+      const order = getOrder(orderId);
+      if (!order || order.status !== "failed") {
+        return;
+      }
+
+      const items = (order.items || [])
+        .filter((item) => getProduct(item.productId))
+        .map((item) => ({ productId: item.productId, quantity: item.quantity || 1 }));
+
+      if (items.length === 0) {
+        showToast("These items are no longer available.", "error");
+        return;
+      }
+
+      checkoutItems(items, { clearCartOnSuccess: false });
+    }
+
+    function getOrderActions(order) {
+      switch (order.status) {
+        case "pending":
+          return [{ action: "cancel-order", label: "Cancel Order", className: "danger-button" }];
+        case "success":
+          return [
+            ...(order.paymentId
+              ? [{ action: "return-order", label: "Return & Refund", className: "danger-button" }]
+              : []),
+            { action: "buy-again", label: "Buy Again", className: "secondary-button" }
+          ];
+        case "failed":
+          return [
+            { action: "retry-payment", label: "Retry Payment", className: "primary-button" },
+            { action: "buy-again", label: "Buy Again", className: "secondary-button" }
+          ];
+        case "cancelled":
+        case "refunded":
+          return [{ action: "buy-again", label: "Buy Again", className: "secondary-button" }];
+        default:
+          return [];
+      }
+    }
+
+    const orderActionHandlers = {
+      "cancel-order": cancelOrder,
+      "return-order": returnOrder,
+      "buy-again": buyAgain,
+      "retry-payment": retryPayment
+    };
 
     function applyConfig(config) {
       razorpayKeyId = config.keyId || "";
@@ -1762,8 +1906,8 @@
           timeStyle: "short"
         });
         const title = order.orderNumber || order.gatewayOrderId || order.id.slice(-10);
-        const canCancel = order.status === "pending";
         const statusClass = `status-${order.status}`;
+        const actions = getOrderActions(order);
 
         return `
           <article class="order-card">
@@ -1782,17 +1926,19 @@
             ${order.paymentId ? `<p class="order-detail">Payment ID: ${order.paymentId}</p>` : ""}
             ${order.gatewayOrderId ? `<p class="order-detail">Razorpay order: ${order.gatewayOrderId}</p>` : ""}
             ${order.message ? `<p class="order-detail">${order.message}</p>` : ""}
-            ${canCancel ? `
+            ${actions.length ? `
               <div class="order-actions">
-                <button class="danger-button" type="button" data-action="cancel-order" data-order-id="${order.id}">Cancel Order</button>
+                ${actions.map((action) => `
+                  <button class="${action.className}" type="button" data-action="${action.action}" data-order-id="${order.id}" ${activeOrderId ? "disabled" : ""}>${action.label}</button>
+                `).join("")}
               </div>
             ` : ""}
           </article>
         `;
       }).join("");
 
-      ordersList.querySelectorAll("button[data-action='cancel-order']").forEach((button) => {
-        button.addEventListener("click", () => cancelOrder(button.dataset.orderId));
+      ordersList.querySelectorAll("button[data-action]").forEach((button) => {
+        button.addEventListener("click", () => orderActionHandlers[button.dataset.action]?.(button.dataset.orderId));
       });
     }
 
